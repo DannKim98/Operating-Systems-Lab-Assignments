@@ -6,19 +6,22 @@
 
 int sum;
 pthread_mutex_t lock;
-sem_t sem;
+sem_t sem[10];
 
 void *runner(void*param){
-	pthread_mutex_lock(&lock);
 	int argnum = (intptr_t) param;
+	if (argnum != 0){
+		sem_wait(&sem[argnum]);
+	}
+	pthread_mutex_lock(&lock);
 	printf("thread_arg=%i was created\t", argnum);
 	sum = 0;
 	for(int i=0; i<=argnum; i++){
 		sum += i;
 	}
 	printf("sum = %i \n", sum);
+	sem_post(&sem[argnum+1]);
 	pthread_mutex_unlock(&lock);
-	sem_post(&sem);
 	// printf("thread_arg %i was completed\n", argnum);
 	pthread_exit(0);
 }
@@ -31,7 +34,13 @@ int main(int argc, char *argv[]){
 		return -1;
 	}
 
+	//asume that there are 10 or less threads
 	int size = atoi(argv[1]);
+	if (size > 10){
+		fprintf(stderr, "%d must be <=10\n", atoi(argv[1]));
+		return -1;	
+	}
+
 	pthread_t tids[size];
 
 	if(atoi(argv[1])<0){
@@ -41,17 +50,21 @@ int main(int argc, char *argv[]){
 
 	pthread_attr_init(&attr);
 	pthread_mutex_init(&lock, 0);
-	sem_init( &sem, 0, 1 );
+	for (int i=0; i<size; i++){
+		sem_init( &sem[i], 0, 0 );
+	}
+	
 
 	for (int i=0; i<size; i++){
-		sem_wait(&sem);
-		pthread_create(&tids[i], &attr, runner, (void *) (intptr_t) i);
+		if (pthread_create(&tids[i], &attr, runner, (void *) (intptr_t) i) != 0){
+			printf("an error occurred in thread_arg=%i\n", i);	
+		}
 	}
 
-	//I used this loop just to wait until the last thread finishes 
+	// I used this loop just to wait until the last thread finishes 
 	int semVal;
 	while (1){
-		sem_getvalue(&sem, &semVal);
+		sem_getvalue(&sem[size], &semVal);
 		if (semVal != 0){
 			break;
 		}
@@ -66,7 +79,10 @@ int main(int argc, char *argv[]){
 	}
 
 	pthread_mutex_destroy(&lock);
-	sem_destroy(&sem);
+	for (int i=0; i<size; i++){
+		sem_destroy(&sem[i]);
+	}
+	
 
 	printf("the main thread exits\n");
 	return 0;
